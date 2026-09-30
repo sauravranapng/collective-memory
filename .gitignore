@@ -1,0 +1,29 @@
+# Dependencies
+**/node_modules/
+
+# Build output
+**/dist/
+**/dist-ssr/
+*.tsbuildinfo
+
+# Local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Uploaded source archives
+/client/src.zip
+/server/src.zip
