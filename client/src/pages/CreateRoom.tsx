@@ -64,8 +64,8 @@ export function CreateRoom({
     };
 
     return (
-        <div>
-            <h1>Create Room</h1>
+        <div className="screen screen--form">
+            <p className="eyebrow">Start a new game</p><h1>Create a room</h1><p>Choose a name and invite your friends with the room code.</p>
 
             <input
                 value={playerName}
@@ -86,7 +86,7 @@ export function CreateRoom({
                 Back
             </button>
 
-            {error && <p>{error}</p>}
+            {error && <p className="form-error" role="alert">{error}</p>}
         </div>
     );
 }

@@ -26,6 +26,7 @@ export interface Placement {
     playerId: string;
     challenged: boolean;
     frozen: boolean;
+    superseded?: boolean;
 }
 
 export interface Score {
@@ -40,3 +41,4 @@ export interface GameStartedMessage {
     originalObjects: GameObject[];
     phaseEndsAt: number;
 }
+

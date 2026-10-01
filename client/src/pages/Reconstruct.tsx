@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DragEvent } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
 import { useGameSocket } from "../game/GameSocketContext";
 import type { Placement, Player } from "../types/game";
 
@@ -24,16 +24,20 @@ export function Reconstruct({ objects, phaseEndsAt, playerId, players }: Reconst
     const [placements, setPlacements] = useState<Placement[]>([]);
     const [challengeCount, setChallengeCount] = useState(0);
     const [challengeMessage, setChallengeMessage] = useState("");
+    const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState(() =>
         Math.max(0, Math.ceil((phaseEndsAt - Date.now()) / 1000))
     );
     const [draggedObjectId, setDraggedObjectId] = useState<string | null>(null);
 
     const playerNames = useMemo(() => new Map(players.map((player) => [player.id, player.name])), [players]);
+    const currentPlayer = players.find((player) => player.id === playerId);
+    const myPlacementCount = placements.filter((placement) => placement.playerId === playerId && !placement.superseded).length;
+    const myUsedObjectCount = placements.filter((placement) => placement.playerId === playerId).length;
 
     useEffect(() => {
-        setChallengeCount(players.find((player) => player.id === playerId)?.challengesRemaining ?? 0);
-    }, [players, playerId]);
+        setChallengeCount(currentPlayer?.challengesRemaining ?? 0);
+    }, [currentPlayer?.challengesRemaining, playerId]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -54,7 +58,8 @@ export function Reconstruct({ objects, phaseEndsAt, playerId, players }: Reconst
                 col: incoming.col,
                 playerId: incoming.playerId,
                 challenged: incoming.challenged ?? false,
-                frozen: incoming.frozen ?? false
+                frozen: incoming.frozen ?? false,
+                superseded: incoming.superseded ?? false
             };
             setPlacements((current) => {
                 const key = placementKey(placement);
@@ -64,76 +69,152 @@ export function Reconstruct({ objects, phaseEndsAt, playerId, players }: Reconst
                 updated[index] = placement;
                 return updated;
             });
+            if (placement.playerId === playerId) {
+                setSelectedObjectId((selected) => selected === placement.objectId ? null : selected);
+            }
         }
         if (message.type === "CHALLENGE_RESULT") {
             const successful = message.successful === true;
+            const replacementCorrect = message.replacementCorrect === true;
             setChallengeCount((count) => Math.max(0, count - 1));
-            setChallengeMessage(successful ? "Challenge successful: the placement was incorrect." : "Challenge unsuccessful: the placement was correct.");
+            setChallengeMessage(!successful ? "Challenge failed. You lose 10 points; the original placer earns 10." : replacementCorrect ? "Challenge successful. Your replacement is correct: +10 points; the original placer loses 5." : "Challenge successful, but your replacement is incorrect. The original placer loses 5.");
         }
         if (message.type === "PLACEMENT_REJECTED" || message.type === "ERROR") {
             setChallengeMessage(String(message.message ?? "The action could not be completed."));
         }
-    }), [subscribe]);
+    }), [subscribe, playerId]);
 
-    const getPlacementAt = (row: number, col: number) => placements.find((p) => p.row === row && p.col === col);
-    const isObjectPlacedByCurrentPlayer = (objectId: string) => placements.some((p) => p.objectId === objectId && p.playerId === playerId);
+    const getPlacementAt = (row: number, col: number) => placements.find((placement) => !placement.superseded && placement.row === row && placement.col === col);
+    const isObjectPlacedByCurrentPlayer = (objectId: string) => placements.some((placement) => placement.objectId === objectId && placement.playerId === playerId);
 
-    const handleDragStart = (event: DragEvent<HTMLDivElement>, objectId: string) => {
-        if (isObjectPlacedByCurrentPlayer(objectId)) { event.preventDefault(); return; }
-        setDraggedObjectId(objectId);
-        event.dataTransfer.setData("objectId", objectId);
-        event.dataTransfer.effectAllowed = "move";
-    };
-
-    const handleDrop = (event: DragEvent<HTMLButtonElement>, row: number, col: number) => {
-        event.preventDefault();
-        const objectId = event.dataTransfer.getData("objectId");
-        if (objectId && !getPlacementAt(row, col) && !isObjectPlacedByCurrentPlayer(objectId)) {
-            send({ type: "PLACE_OBJECT", objectId, row, col });
-        }
+    const placeObject = (objectId: string, row: number, col: number) => {
+        if (getPlacementAt(row, col) || isObjectPlacedByCurrentPlayer(objectId)) return;
+        setChallengeMessage("");
+        send({ type: "PLACE_OBJECT", objectId, row, col });
+        setSelectedObjectId(null);
         setDraggedObjectId(null);
     };
 
-    const challenge = (placement: Placement) => {
-        if (placement.playerId === playerId || placement.challenged || placement.frozen || challengeCount <= 0) return;
-        setChallengeMessage("");
-        send({ type: "CHALLENGE_PLACEMENT", objectId: placement.objectId, placementPlayerId: placement.playerId });
+    const handleDragStart = (event: DragEvent<HTMLButtonElement>, objectId: string) => {
+        if (isObjectPlacedByCurrentPlayer(objectId)) {
+            event.preventDefault();
+            return;
+        }
+        setSelectedObjectId(objectId);
+        setDraggedObjectId(objectId);
+        event.dataTransfer.setData("text/plain", objectId);
+        event.dataTransfer.effectAllowed = "move";
     };
 
-    return <div>
-        <h1>Reconstruct</h1>
-        <h2>Time remaining: {remainingSeconds}</h2>
-        <p>Drag each object into the cell where you remember seeing it.</p>
-        <h3>Objects</h3>
-        <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-            {objects.filter((object) => !isObjectPlacedByCurrentPlayer(object.id)).map((object) =>
-                <div key={object.id} draggable onDragStart={(event) => handleDragStart(event, object.id)} onDragEnd={() => setDraggedObjectId(null)}
-                    style={{ width: 60, height: 60, border: "2px solid black", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, cursor: "grab", userSelect: "none" }}>
-                    {object.emoji}
+    const handleDrop = (event: DragEvent<HTMLDivElement>, row: number, col: number) => {
+        event.preventDefault();
+        const objectId = event.dataTransfer.getData("text/plain") || selectedObjectId;
+        if (objectId) placeObject(objectId, row, col);
+        setDraggedObjectId(null);
+    };
+
+    const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>, row: number, col: number) => {
+        if ((event.key === "Enter" || event.key === " ") && selectedObjectId) {
+            event.preventDefault();
+            placeObject(selectedObjectId, row, col);
+        }
+    };
+
+    const challenge = (placement: Placement) => {
+        if (!selectedObjectId || selectedObjectId === placement.objectId || placement.playerId === playerId || placement.challenged || placement.frozen || challengeCount <= 0) return;
+        setChallengeMessage("");
+        send({
+            type: "CHALLENGE_PLACEMENT",
+            objectId: placement.objectId,
+            placementPlayerId: placement.playerId,
+            replacementObjectId: selectedObjectId
+        });
+    };
+    return (
+        <main className="screen reconstruct-screen">
+            <header className="reconstruct-header">
+                <div>
+                    <p className="eyebrow">Your turn</p>
+                    <h1>Rebuild the board</h1>
+                    <p>Select an object, then tap a cell—or drag it into place.</p>
                 </div>
-            )}
-        </div>
-        <h3>Board</h3>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${GRID_SIZE}, 100px)`, gap: 4 }}>
-            {Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
-                const row = Math.floor(index / GRID_SIZE);
-                const col = index % GRID_SIZE;
-                const placement = getPlacementAt(row, col);
-                const object = placement && objects.find((item) => item.id === placement.objectId);
-                const canChallenge = !!placement && placement.playerId !== playerId && !placement.challenged && !placement.frozen && challengeCount > 0;
-                return <div key={`${row}-${col}`} style={{ width: 100, minHeight: 82, border: "1px solid black", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: placement?.frozen ? "#e8e8e8" : draggedObjectId && !placement ? "#f5f5f5" : "white" }}>
-                    <button aria-label={`Place at row ${row + 1}, column ${col + 1}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, row, col)}
-                        style={{ border: 0, background: "transparent", fontSize: 30, minHeight: 40, cursor: draggedObjectId && !placement ? "copy" : "default" }}>
-                        {object?.emoji}
-                    </button>
-                    {placement && <small>{playerNames.get(placement.playerId) ?? "Player"}{placement.playerId === playerId ? " (you)" : ""}</small>}
-                    {placement?.challenged && <small>{placement.frozen ? "Challenged · frozen" : "Challenged"}</small>}
-                    {canChallenge && <button onClick={() => challenge(placement)}>Challenge</button>}
-                </div>;
-            })}
-        </div>
-        <p>Your placements: {placements.filter((p) => p.playerId === playerId).length} / {objects.length}</p>
-        <p>Challenges remaining: {challengeCount}</p>
-        {challengeMessage && <p role="status">{challengeMessage}</p>}
-    </div>;
+                <div className={`timer-pill ${remainingSeconds <= 5 ? "timer-pill--urgent" : ""}`}>◷ {remainingSeconds}s</div>
+            </header>
+
+            <div className="placement-meta reconstruct-stats">
+                <span className="stat-chip">Placed {myPlacementCount} / {objects.length}</span>
+                <span className="stat-chip stat-chip--score">Your score {currentPlayer?.score ?? 0}</span>
+                <span className="stat-chip">Challenges {challengeCount}</span>
+                {selectedObjectId && <span className="stat-chip stat-chip--selected">Choose a cell</span>}
+            </div>
+
+            <div className="reconstruct-layout">
+                <section className="reconstruct-tray" aria-label="Available objects">
+                    <div className="reconstruct-pane-heading">
+                        <h2>Objects</h2>
+                        <span>{objects.length - myUsedObjectCount} left</span>
+                    </div>
+                    <div className="object-tray">
+                        {objects.filter((object) => !isObjectPlacedByCurrentPlayer(object.id)).map((object) => (
+                            <button
+                                className={`object-token${selectedObjectId === object.id ? " object-token--selected" : ""}`}
+                                key={object.id}
+                                type="button"
+                                draggable
+                                aria-label={`Select ${object.emoji}`}
+                                aria-pressed={selectedObjectId === object.id}
+                                onClick={() => setSelectedObjectId((current) => current === object.id ? null : object.id)}
+                                onDragStart={(event) => handleDragStart(event, object.id)}
+                                onDragEnd={() => setDraggedObjectId(null)}
+                            >
+                                {object.emoji}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="reconstruct-board" aria-label="Reconstruction grid">
+                    <div className="reconstruct-pane-heading">
+                        <h2>Board</h2>
+                        <span>6 × 6</span>
+                    </div>
+                    <div className="board">
+                        {Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
+                            const row = Math.floor(index / GRID_SIZE);
+                            const col = index % GRID_SIZE;
+                            const placement = getPlacementAt(row, col);
+                            const object = placement && objects.find((item) => item.id === placement.objectId);
+                            const canChallenge = !!placement && placement.playerId !== playerId && !placement.challenged && !placement.frozen && challengeCount > 0;
+                            const canReplaceAndChallenge = canChallenge && !!selectedObjectId && selectedObjectId !== placement.objectId;
+                            return (
+                                <div
+                                    className={`board-cell${placement?.frozen ? " board-cell--frozen" : ""}${draggedObjectId && !placement ? " board-cell--drop-ready" : ""}`}
+                                    key={`${row}-${col}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`Row ${row + 1}, column ${col + 1}${placement ? ", occupied" : selectedObjectId ? ", place selected object" : ", empty"}`}
+                                    onClick={() => selectedObjectId && !placement && placeObject(selectedObjectId, row, col)}
+                                    onKeyDown={(event) => handleCellKeyDown(event, row, col)}
+                                    onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+                                    onDrop={(event) => handleDrop(event, row, col)}
+                                >
+                                    {object && <span className="board-emoji">{object.emoji}</span>}
+                                    {placement && <small>{playerNames.get(placement.playerId) ?? "Player"}{placement.playerId === playerId ? " · you" : ""}</small>}
+                                    {placement?.challenged && <small>{placement.frozen ? "Challenged · frozen" : "Challenged"}</small>}
+                                    {canChallenge && (
+                                        <button className="challenge-button" type="button" disabled={!canReplaceAndChallenge} title={selectedObjectId ? "Replace and challenge this placement" : "Select a replacement object first"} onClick={(event) => { event.stopPropagation(); challenge(placement); }}>Replace &amp; Challenge</button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            </div>
+
+            {challengeMessage && <p className="reconstruct-message" role="status">{challengeMessage}</p>}
+        </main>
+    );
 }
+
+
+

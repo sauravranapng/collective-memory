@@ -95,8 +95,8 @@ export function Reveal({
     };
 
     return (
-        <div>
-            <h1>Reveal</h1>
+        <div className="screen">
+            <p className="eyebrow">Round recap</p><h1>See what everyone remembered</h1>
 
             <h2>
                 Original Board
@@ -108,6 +108,7 @@ export function Reveal({
             </p>
 
             <div
+                className="board"
                 style={{
                     display: "grid",
                     gridTemplateColumns:
@@ -139,7 +140,7 @@ export function Reveal({
 
                         return (
                             <div
-                                key={`${row}-${col}`}
+                                className="board-cell" key={`${row}-${col}`}
                                 style={{
                                     width: "70px",
                                     height: "70px",
@@ -214,3 +215,9 @@ export function Reveal({
         </div>
     );
 }
+
+
+
+
+
+

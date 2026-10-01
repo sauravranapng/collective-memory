@@ -55,10 +55,10 @@ export function Memorize({
     };
 
     return (
-        <div>
-            <h1>Memorize</h1>
+        <div className="screen">
+            <p className="eyebrow">Round in progress</p><h1>Memorize the board</h1>
 
-            <h2>{remainingSeconds}</h2>
+            <h2 className="timer-pill">◷ {remainingSeconds}s</h2>
 
             <p>
                 Remember the objects and their exact
@@ -66,6 +66,7 @@ export function Memorize({
             </p>
 
             <div
+                className="board"
                 style={{
                     display: "grid",
                     gridTemplateColumns:
@@ -89,7 +90,7 @@ export function Memorize({
 
                         return (
                             <div
-                                key={`${row}-${col}`}
+                                className="board-cell" key={`${row}-${col}`}
                                 style={{
                                     width: "70px",
                                     height: "70px",
@@ -109,3 +110,6 @@ export function Memorize({
         </div>
     );
 }
+
+
+

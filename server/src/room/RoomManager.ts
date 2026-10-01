@@ -128,7 +128,7 @@ export class RoomManager {
             originalObjects,
             placements: [],
             startedAt: now,
-            phaseEndsAt: now + 10_000
+            phaseEndsAt: now + 20_000
         };
 
         room.phase = "MEMORIZE";
@@ -167,7 +167,15 @@ export class RoomManager {
             "🍕",
             "🌈",
             "🎲",
-            "🚲"
+            "🚲",
+            "🍓",
+            "🐸",
+            "🎁",
+            "🧁",
+            "🐙",
+            "🌵",
+            "🎈",
+            "🦋"
         ];
 
         const positions = this.generatePositions(
@@ -286,8 +294,14 @@ export class RoomManager {
             col,
             playerId,
             challenged: false,
-            frozen: false
+            frozen: false,
+            scored: true
         };
+
+        const player = room.players.get(playerId);
+        if (player) {
+            player.score += object.row === row && object.col === col ? 10 : -5;
+        }
 
         round.placements.push(placement);
 
@@ -313,6 +327,9 @@ export class RoomManager {
         }
 
         for (const placement of round.placements) {
+            if (placement.superseded || placement.scored) {
+                continue;
+            }
             const object =
                 round.originalObjects.find(
                     (item) =>
@@ -412,106 +429,106 @@ export class RoomManager {
         roomId: string,
         challengerId: string,
         placementObjectId: string,
-        placementPlayerId: string
+        placementPlayerId: string,
+        replacementObjectId: string
     ): {
         successful: boolean;
+        replacementCorrect: boolean;
         challengerScore: number;
+        placementPlayerScore: number;
         placementPlayerId: string;
+        challengedPlacement: Placement;
+        replacementPlacement: Placement;
     } {
         const room = this.rooms.get(roomId);
-
-        if (!room) {
-            throw new Error("Room not found");
-        }
+        if (!room) throw new Error("Room not found");
 
         const round = room.currentRound;
-
-        if (!round) {
-            throw new Error("No active round");
-        }
-
+        if (!round) throw new Error("No active round");
         if (round.phase !== "RECONSTRUCT") {
-            throw new Error(
-                "Challenges are only allowed during reconstruction"
-            );
+            throw new Error("Challenges are only allowed during reconstruction");
         }
-
         if (challengerId === placementPlayerId) {
-            throw new Error(
-                "You cannot challenge your own placement"
-            );
+            throw new Error("You cannot challenge your own placement");
         }
 
-        const challenger =
-            room.players.get(challengerId);
-
-        if (!challenger) {
-            throw new Error(
-                "Challenger is not in the room"
-            );
-        }
-
+        const challenger = room.players.get(challengerId);
+        if (!challenger) throw new Error("Challenger is not in the room");
         if (challenger.challengesRemaining <= 0) {
-            throw new Error(
-                "No challenges remaining"
-            );
+            throw new Error("No challenges remaining");
         }
 
-        const placement =
-            round.placements.find(
-                (item) =>
-                    item.objectId === placementObjectId &&
-                    item.playerId === placementPlayerId
-            );
-
-        if (!placement) {
-            throw new Error(
-                "Placement not found"
-            );
+        const placement = round.placements.find(
+            (item) => item.objectId === placementObjectId && item.playerId === placementPlayerId && !item.superseded
+        );
+        if (!placement) throw new Error("Placement not found");
+        if (placement.challenged || placement.frozen) {
+            throw new Error("This placement has already been challenged");
+        }
+        if (!replacementObjectId || replacementObjectId === placementObjectId) {
+            throw new Error("Choose a different object as the replacement");
         }
 
-        if (placement.challenged) {
-            throw new Error(
-                "This placement has already been challenged"
-            );
+        const originalObject = round.originalObjects.find((object) => object.id === placement.objectId);
+        const replacementObject = round.originalObjects.find((object) => object.id === replacementObjectId);
+        if (!originalObject || !replacementObject) {
+            throw new Error("Original or replacement object not found");
+        }
+        const placementPlayer = room.players.get(placement.playerId);
+        if (!placementPlayer) throw new Error("Placement owner is not in the room");
+
+        const challengerAlreadyPlacedReplacement = round.placements.some(
+            (item) => item.playerId === challengerId && item.objectId === replacementObjectId
+        );
+        if (challengerAlreadyPlacedReplacement) {
+            throw new Error("You have already placed this object");
         }
 
-        const originalObject =
-            round.originalObjects.find(
-                (object) =>
-                    object.id === placement.objectId
-            );
-
-        if (!originalObject) {
-            throw new Error(
-                "Original object not found"
-            );
-        }
+        const challengedPlacementCorrect =
+            originalObject.row === placement.row && originalObject.col === placement.col;
+        const successful = !challengedPlacementCorrect;
+        const replacementCorrect =
+            replacementObject.row === placement.row && replacementObject.col === placement.col;
 
         challenger.challengesRemaining--;
-
-        const successful =
-            originalObject.row !== placement.row ||
-            originalObject.col !== placement.col;
-
         placement.challenged = true;
-        placement.challengeSuccessful =
-            successful;
+        placement.challengeSuccessful = successful;
         placement.frozen = true;
+        placement.superseded = true;
+        placement.scored = true;
 
-        if (successful) {
-            challenger.score += 5;
+        const replacementPlacement: Placement = {
+            objectId: replacementObjectId,
+            row: placement.row,
+            col: placement.col,
+            playerId: challengerId,
+            challenged: true,
+            challengeSuccessful: successful,
+            frozen: true,
+            superseded: false,
+            scored: true
+        };
+        round.placements.push(replacementPlacement);
+
+        if (challengedPlacementCorrect) {
+            // The original placement was already scored when it was made.
+            challenger.score -= 10;
         } else {
-            challenger.score -= 5;
+            // The original placement already received its -5 penalty.
+            // Score the challenger's replacement as a normal placement.
+            challenger.score += replacementCorrect ? 10 : -5;
         }
 
         return {
             successful,
+            replacementCorrect,
             challengerScore: challenger.score,
-            placementPlayerId
+            placementPlayerScore: placementPlayer.score,
+            placementPlayerId,
+            challengedPlacement: placement,
+            replacementPlacement
         };
     }
-
     startNextRound(
         roomId: string,
         playerId: string
@@ -561,7 +578,7 @@ export class RoomManager {
             startedAt: now,
 
             phaseEndsAt:
-                now + 10_000
+                now + 20_000
         };
 
         room.currentRound = round;
@@ -574,3 +591,4 @@ export class RoomManager {
         return round;
     }
 }
+

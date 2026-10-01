@@ -12,60 +12,34 @@ interface ScoresProps {
     hostId: string;
 }
 
-export function Scores({
-                           scores,
-                           playerId,
-                           hostId
-                       }: ScoresProps) {
+export function Scores({ scores, playerId, hostId }: ScoresProps) {
     const { send } = useGameSocket();
-
-    const sortedScores = [...scores].sort(
-        (a, b) => b.score - a.score
-    );
-
-    const isHost =
-        playerId === hostId;
-
-    const handleEndGame = () => {
-        send({
-            type: "END_GAME"
-        });
-    };
-
-    const handleNextRound = () => {
-        send({ type: "NEXT_ROUND" });
-    };
+    const sortedScores = [...scores].sort((a, b) => b.score - a.score);
+    const isHost = playerId === hostId;
 
     return (
-        <div>
-            <h1>Scores</h1>
-
-            <h2>Current Scores</h2>
-
+        <main className="screen screen--scores">
+            <p className="eyebrow">Round complete</p>
+            <h1>Scoreboard</h1>
+            <p>Every good memory counts. Here is where everyone stands.</p>
             <ol>
                 {sortedScores.map((player) => (
                     <li key={player.playerId}>
-                        {player.playerName}:{" "}
-                        {player.score}
-
-                        {player.playerId ===
-                            playerId && (
-                                <span> (You)</span>
-                            )}
+                        <span className="score-player">{player.playerName}</span>
+                        <span className="score-value">{player.score}</span>
+                        {player.playerId === playerId ? <span className="score-you">You</span> : <span className="score-role">Player</span>}
                     </li>
                 ))}
             </ol>
-
             {isHost ? (
-                <div style={{ display: "flex", gap: 12 }}>
-                    <button onClick={handleNextRound}>Next Round</button>
-                    <button onClick={handleEndGame}>End Game</button>
+                <div className="score-actions">
+                    <button onClick={() => send({ type: "NEXT_ROUND" })}>Next Round</button>
+                    <button onClick={() => send({ type: "END_GAME" })}>End Game</button>
                 </div>
             ) : (
-                <p>
-                    Waiting for the host to start the next round or end the game...
-                </p>
+                <p>Waiting for the host to start the next round or end the game...</p>
             )}
-        </div>
+        </main>
     );
 }
+

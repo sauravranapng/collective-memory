@@ -64,8 +64,8 @@ export function JoinRoom({
     };
 
     return (
-        <div>
-            <h1>Join Room</h1>
+        <div className="screen screen--form">
+            <p className="eyebrow">Join your people</p><h1>Join a room</h1><p>Enter the room code and your name to join the game.</p>
 
             <input
                 value={roomId}
@@ -95,7 +95,7 @@ export function JoinRoom({
                 Back
             </button>
 
-            {error && <p>{error}</p>}
+            {error && <p className="form-error" role="alert">{error}</p>}
         </div>
     );
 }

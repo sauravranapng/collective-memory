@@ -28,6 +28,8 @@ export interface Placement {
     challenged: boolean;
     challengeSuccessful?: boolean;
     frozen: boolean;
+    superseded?: boolean;
+    scored?: boolean;
 }
 
 export interface Round {

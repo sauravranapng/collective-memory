@@ -55,6 +55,8 @@ function handleMessage(
         row?: number;
         col?: number;
         playerId?: string;
+        placementPlayerId?: string;
+        replacementObjectId?: string;
     }
 ): void {
     switch (message.type) {
@@ -92,11 +94,7 @@ function handleMessage(
             break;
 
         case "CHALLENGE_PLACEMENT":
-            handleChallengePlacement(
-                socket,
-                message.objectId,
-                message.playerId
-            );
+            handleChallengePlacement(socket, message.objectId, message.placementPlayerId, message.replacementObjectId);
             break;
 
         case "NEXT_ROUND":
@@ -235,7 +233,7 @@ function handleStartGame(socket: WebSocket): void {
             );
 
             startReconstructionTimer(roomId);
-        }, 10_000);
+        }, 20_000);
     } catch (error) {
         sendError(
             socket,
@@ -257,6 +255,24 @@ function handleDisconnect(socket: WebSocket): void {
     );
 
     broadcastRoomState(client.roomId);
+}
+
+function broadcastScoresUpdated(roomId: string): void {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+
+    const scores = Array.from(room.players.values()).map((player) => ({
+        playerId: player.id,
+        playerName: player.name,
+        score: player.score
+    }));
+    const message = { type: "SCORES_UPDATED", scores };
+
+    for (const [socket, client] of clients) {
+        if (client.roomId === roomId && socket.readyState === WebSocket.OPEN) {
+            send(socket, message);
+        }
+    }
 }
 
 function broadcastRoomState(roomId: string): void {
@@ -393,6 +409,7 @@ function handlePlaceObject(
             client.roomId,
             placement
         );
+        broadcastScoresUpdated(client.roomId);
     } catch (error) {
         sendError(
             socket,
@@ -408,6 +425,9 @@ function broadcastPlacement(
         row: number;
         col: number;
         playerId: string;
+        challenged?: boolean;
+        frozen?: boolean;
+        superseded?: boolean;
     }
 ): void {
     const message = {
@@ -417,21 +437,18 @@ function broadcastPlacement(
             row: placement.row,
             col: placement.col,
             playerId: placement.playerId,
-            challenged: false,
-            frozen: false
+            challenged: placement.challenged ?? false,
+            frozen: placement.frozen ?? false,
+            superseded: placement.superseded ?? false
         }
     };
 
     for (const [socket, client] of clients) {
-        if (
-            client.roomId === roomId &&
-            socket.readyState === WebSocket.OPEN
-        ) {
+        if (client.roomId === roomId && socket.readyState === WebSocket.OPEN) {
             send(socket, message);
         }
     }
 }
-
 function startReconstructionTimer(
     roomId: string
 ): void {
@@ -479,6 +496,9 @@ function broadcastRevealStarted(
             row: number;
             col: number;
             playerId: string;
+            challenged?: boolean;
+            frozen?: boolean;
+            superseded?: boolean;
         }[];
         phaseEndsAt: number;
     }
@@ -506,8 +526,16 @@ function broadcastRevealStarted(
         originalObjects:
         round.originalObjects,
 
-        placements:
-        round.placements,
+        placements: round.placements
+            .filter((placement) => !placement.superseded)
+            .map((placement) => ({
+                objectId: placement.objectId,
+                row: placement.row,
+                col: placement.col,
+                playerId: placement.playerId,
+                challenged: placement.challenged,
+                frozen: placement.frozen
+            })),
 
         scores
     };
@@ -638,62 +666,48 @@ function broadcastGameFinished(
 function handleChallengePlacement(
     socket: WebSocket,
     objectId: string | undefined,
-    placementPlayerId: string | undefined
+    placementPlayerId: string | undefined,
+    replacementObjectId: string | undefined
 ): void {
     const client = clients.get(socket);
-
     if (!client?.roomId || !client.playerId) {
-        sendError(
-            socket,
-            "You are not in a room"
-        );
+        sendError(socket, "You are not in a room");
         return;
     }
-
-    if (!objectId || !placementPlayerId) {
-        sendError(
-            socket,
-            "Invalid challenge"
-        );
+    if (!objectId || !placementPlayerId || !replacementObjectId) {
+        sendError(socket, "Select an object to replace the challenged placement");
         return;
     }
 
     try {
-        const result =
-            roomManager.challengePlacement(
-                client.roomId,
-                client.playerId,
-                objectId,
-                placementPlayerId
-            );
-
-        sendChallengeResult(
-            socket,
-            result.successful
-        );
-
-        broadcastPlacementUpdated(
+        const result = roomManager.challengePlacement(
             client.roomId,
+            client.playerId,
             objectId,
-            placementPlayerId
+            placementPlayerId,
+            replacementObjectId
         );
+
+        sendChallengeResult(socket, result.successful, result.replacementCorrect);
+        broadcastPlacementUpdated(client.roomId, objectId, placementPlayerId);
+        broadcastPlacement(client.roomId, result.replacementPlacement);
+        broadcastScoresUpdated(client.roomId);
+        broadcastRoomState(client.roomId);
     } catch (error) {
-        sendError(
-            socket,
-            getErrorMessage(error)
-        );
+        sendError(socket, getErrorMessage(error));
     }
 }
 function sendChallengeResult(
     socket: WebSocket,
-    successful: boolean
+    successful: boolean,
+    replacementCorrect: boolean
 ): void {
     send(socket, {
         type: "CHALLENGE_RESULT",
-        successful
+        successful,
+        replacementCorrect
     });
 }
-
 function broadcastPlacementUpdated(
     roomId: string,
     objectId: string,
@@ -724,7 +738,8 @@ function broadcastPlacementUpdated(
             col: placement.col,
             playerId: placement.playerId,
             challenged: placement.challenged,
-            frozen: placement.frozen
+            frozen: placement.frozen,
+            superseded: placement.superseded ?? false
         }
     };
 
@@ -796,7 +811,7 @@ function handleNextRound(
             startReconstructionTimer(
                 roomId
             );
-        }, 10_000);
+        }, 20_000);
     } catch (error) {
         sendError(
             socket,
@@ -867,3 +882,7 @@ function getErrorMessage(error: unknown): string {
 console.log(
     `Collective Memory server running on ws://localhost:${PORT}`
 );
+
+
+
+

@@ -145,6 +145,19 @@ function App() {
                 return;
             }
 
+            if (message.type === "SCORES_UPDATED") {
+                const updatedScores = message.scores as Score[];
+                setScores(updatedScores);
+                setRoomState((current) => current ? {
+                    ...current,
+                    players: current.players.map((player) => {
+                        const updated = updatedScores.find((score) => score.playerId === player.id);
+                        return updated ? { ...player, score: updated.score } : player;
+                    })
+                } : current);
+                return;
+            }
+
             if (message.type === "GAME_FINISHED") {
                 setScreen("HOME");
 
@@ -268,31 +281,40 @@ function App() {
         return (
             <FinalScores
                 scores={scores}
+                playerId={playerId}
+                onGoHome={() => {
+                    setRoomState(null);
+                    setPlayerId("");
+                    setScores([]);
+                    setScreen("HOME");
+                }}
             />
         );
     }
 
     return (
-        <div>
-            <h1>Collective Memory</h1>
-
-            <button
-                onClick={() =>
-                    setScreen("CREATE")
-                }
-            >
-                Create Room
-            </button>
-
-            <button
-                onClick={() =>
-                    setScreen("JOIN")
-                }
-            >
-                Join Room
-            </button>
-        </div>
+        <main className="screen home-screen">
+            <section className="home-copy">
+                <div className="brand-mark"><span className="brand-icon">✦</span> A game for sharp minds</div>
+                <p className="eyebrow">Remember together</p>
+                <h1>Collective <span>Memory</span></h1>
+                <p className="home-lede">A little attention, a lot of teamwork. Memorize the board, rebuild it together, and see who remembers best.</p>
+                <div className="home-actions">
+                    <button onClick={() => setScreen("CREATE")}>Create a room</button>
+                    <button onClick={() => setScreen("JOIN")}>Join a room</button>
+                </div>
+            </section>
+            <aside className="home-art" aria-hidden="true">
+                <div className="memory-card"><span>🍋</span><span>🪴</span><span>🎈</span><span>🧁</span><span>🌙</span><span>🐚</span><span>🍓</span><span>🧸</span><span>☀️</span></div>
+                <div className="home-note">✦ Make memories, together</div>
+            </aside>
+        </main>
     );
 }
 
 export default App;
+
+
+
+
+
