@@ -37,7 +37,8 @@ export class WebSocketClient {
             return;
         }
 
-        this.socket = new WebSocket("ws://localhost:8080");
+        const serverUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8080";
+        this.socket = new WebSocket(serverUrl);
 
         this.socket.onopen = () => {
             console.log("Connected to game server");

@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./room/RoomManager.js";
 
-const PORT = 8080;
+const PORT = Number(process.env.PORT) || 8080;
 
 const wss = new WebSocketServer({
     port: PORT
@@ -880,7 +880,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 console.log(
-    `Collective Memory server running on ws://localhost:${PORT}`
+    `Collective Memory server listening on port ${PORT}`
 );
 
 
